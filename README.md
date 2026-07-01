@@ -13,7 +13,8 @@ A local, privacy-first PDF Q&A system powered by ChromaDB and sentence-transform
 ## Project Structure
 
 ```
-├── .env                        # Configuration variables
+├── .env                        # Configuration variables (create from .env.example)
+├── .env.example                # Example configuration template
 ├── config.py                   # Centralized settings loader
 ├── ingest.py                   # PDF indexing pipeline
 ├── search.py                   # ChromaDB search script
@@ -51,7 +52,11 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Configuration
+### 4. Configure Environment
+
+```bash
+cp .env.example .env
+```
 
 Edit `.env` to customize settings:
 
