@@ -33,7 +33,15 @@ def init_cache():
         CREATE TABLE IF NOT EXISTS search_cache (
             cache_key TEXT PRIMARY KEY,
             result TEXT NOT NULL,
+            collection_version TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS collection_metadata (
+            id INTEGER PRIMARY KEY,
+            version TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()
@@ -53,6 +61,15 @@ def get_collection():
         _client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
         _collection = _client.get_collection(name=CHROMA_COLLECTION_NAME)
     return _collection
+
+
+def get_collection_version():
+    try:
+        collection = get_collection()
+        metadata = collection.metadata
+        return metadata.get("created_at", "unknown")
+    except Exception:
+        return "unknown"
 
 
 def get_cache_key(query, top_k):
@@ -100,6 +117,13 @@ def store_cache(cache_key, result):
         "INSERT OR REPLACE INTO search_cache (cache_key, result) VALUES (?, ?)",
         (cache_key, json.dumps(result)),
     )
+    conn.commit()
+    conn.close()
+
+
+def invalidate_cache():
+    conn = sqlite3.connect(str(CACHE_DB))
+    conn.execute("DELETE FROM search_cache")
     conn.commit()
     conn.close()
 
@@ -175,6 +199,11 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python search.py \"your question here\"")
         sys.exit(1)
+
+    if sys.argv[1] == "--clear-cache":
+        invalidate_cache()
+        print("Cache cleared successfully")
+        return
 
     question = " ".join(sys.argv[1:])
     result = search_chromadb(question)

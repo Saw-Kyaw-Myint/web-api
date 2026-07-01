@@ -62,7 +62,7 @@ Edit `.env` to customize settings:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence-transformers model for embeddings |
+| `EMBEDDING_MODEL` | `intfloat/multilingual-e5-large` | Sentence-transformers model for embeddings (Japanese-optimized) |
 | `CHROMA_PERSIST_DIR` | `./db` | ChromaDB storage directory |
 | `CHROMA_COLLECTION_NAME` | `pdf_knowledge_base` | ChromaDB collection name |
 | `PDF_FOLDER` | `./pdfs` | Directory containing PDF files |
@@ -162,10 +162,10 @@ This deletes the existing collection and rebuilds it from scratch.
 
 ## Limitations
 
-- Character-based chunking (not semantic)
+- Sentence-aware chunking for Japanese text (splits on 。and newlines)
 - No OCR for scanned PDFs
 - No conversation memory
-- Single embedding model (all-MiniLM-L6-v2)
+- Multilingual embedding model (intfloat/multilingual-e5-large) optimized for Japanese
 
 ## License
 

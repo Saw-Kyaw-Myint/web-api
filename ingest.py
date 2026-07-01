@@ -2,6 +2,7 @@ import os
 import sys
 import pdfplumber
 import chromadb
+from datetime import datetime
 from sentence_transformers import SentenceTransformer
 from config import (
     EMBEDDING_MODEL,
@@ -11,6 +12,8 @@ from config import (
     CHUNK_SIZE,
     CHUNK_OVERLAP,
 )
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 
 def extract_text_from_pdf(pdf_path):
@@ -25,13 +28,35 @@ def extract_text_from_pdf(pdf_path):
 
 def chunk_text(text, chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP):
     chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end]
-        if chunk.strip():
-            chunks.append(chunk.strip())
-        start += chunk_size - chunk_overlap
+    sentences = []
+    current = ""
+    for char in text:
+        current += char
+        if char in "。\n":
+            if current.strip():
+                sentences.append(current.strip())
+            current = ""
+    if current.strip():
+        sentences.append(current.strip())
+
+    current_chunk = ""
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) <= chunk_size:
+            current_chunk += sentence
+        else:
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+                if chunk_overlap > 0:
+                    overlap_text = current_chunk[-chunk_overlap:]
+                    current_chunk = overlap_text + sentence
+                else:
+                    current_chunk = sentence
+            else:
+                current_chunk = sentence
+
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+
     return chunks
 
 
@@ -69,7 +94,10 @@ def ingest_pdfs():
 
     collection = client.create_collection(
         name=CHROMA_COLLECTION_NAME,
-        metadata={"hnsw:space": "cosine"},
+        metadata={
+            "hnsw:space": "cosine",
+            "created_at": datetime.now().isoformat(),
+        },
     )
 
     total_chunks = 0
