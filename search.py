@@ -1,7 +1,14 @@
 import sys
 import json
+import hashlib
+import sqlite3
+from pathlib import Path
+from difflib import SequenceMatcher
 import chromadb
 from sentence_transformers import SentenceTransformer
+
+sys.stdout.reconfigure(encoding='utf-8')
+
 from config import (
     EMBEDDING_MODEL,
     CHROMA_PERSIST_DIR,
@@ -9,15 +16,108 @@ from config import (
     TOP_K,
 )
 
+CACHE_SIMILARITY_THRESHOLD = 0.6
+
+CACHE_DIR = Path(__file__).parent / "cache"
+CACHE_DB = CACHE_DIR / "search_cache.db"
+
+_model = None
+_client = None
+_collection = None
+
+
+def init_cache():
+    CACHE_DIR.mkdir(exist_ok=True)
+    conn = sqlite3.connect(str(CACHE_DB))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS search_cache (
+            cache_key TEXT PRIMARY KEY,
+            result TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_model():
+    global _model
+    if _model is None:
+        _model = SentenceTransformer(EMBEDDING_MODEL)
+    return _model
+
+
+def get_collection():
+    global _client, _collection
+    if _collection is None:
+        _client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+        _collection = _client.get_collection(name=CHROMA_COLLECTION_NAME)
+    return _collection
+
+
+def get_cache_key(query, top_k):
+    key = f"{query}:{top_k}"
+    return hashlib.md5(key.encode()).hexdigest()
+
+
+def get_cached_result(cache_key):
+    conn = sqlite3.connect(str(CACHE_DB))
+    cursor = conn.execute(
+        "SELECT result FROM search_cache WHERE cache_key = ?", (cache_key,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return json.loads(row[0])
+    return None
+
+
+def find_similar_cached_result(query, top_k):
+    conn = sqlite3.connect(str(CACHE_DB))
+    cursor = conn.execute("SELECT result FROM search_cache")
+    rows = cursor.fetchall()
+    conn.close()
+
+    best_match = None
+    best_score = 0
+
+    for row in rows:
+        cached_result = json.loads(row[0])
+        cached_question = cached_result.get("question", "")
+        score = SequenceMatcher(None, query.lower(), cached_question.lower()).ratio()
+        if score > best_score:
+            best_score = score
+            best_match = cached_result
+
+    if best_score >= CACHE_SIMILARITY_THRESHOLD:
+        return best_match, best_score
+    return None, 0
+
+
+def store_cache(cache_key, result):
+    conn = sqlite3.connect(str(CACHE_DB))
+    conn.execute(
+        "INSERT OR REPLACE INTO search_cache (cache_key, result) VALUES (?, ?)",
+        (cache_key, json.dumps(result)),
+    )
+    conn.commit()
+    conn.close()
+
 
 def search_chromadb(question, top_k=TOP_K):
-    model = SentenceTransformer(EMBEDDING_MODEL)
-    client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+    init_cache()
+    cache_key = get_cache_key(question, top_k)
 
-    try:
-        collection = client.get_collection(name=CHROMA_COLLECTION_NAME)
-    except Exception:
-        return {"error": "Collection not found. Run ingest.py first."}
+    cached = get_cached_result(cache_key)
+    if cached:
+        return cached
+
+    similar, score = find_similar_cached_result(question, top_k)
+    if similar:
+        return similar
+
+    model = get_model()
+    collection = get_collection()
 
     question_embedding = model.encode(question).tolist()
 
@@ -37,7 +137,11 @@ def search_chromadb(question, top_k=TOP_K):
             }
             chunks.append(chunk)
 
-    return {"question": question, "chunks": chunks}
+    result = {"question": question, "chunks": chunks}
+
+    store_cache(cache_key, result)
+
+    return result
 
 
 def format_response(result):

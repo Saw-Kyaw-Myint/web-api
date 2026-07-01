@@ -31,6 +31,9 @@ build/
 db/*.db
 db/*.sqlite
 
+# Cache
+cache/
+
 # OS
 .DS_Store
 Thumbs.db
