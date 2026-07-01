@@ -28,11 +28,12 @@ build/
 *.log
 
 # Database
-db/*.db
-db/*.sqlite
+db/
 
 # Cache
 cache/
+
+# OpenCode
 
 # OS
 .DS_Store
